@@ -1,4 +1,4 @@
 node_modules/
 .env
-playwright/.cache/
 claim-link.txt
+credentials.json
