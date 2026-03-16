@@ -12,6 +12,7 @@ import {
 import { MoltbookClient } from "./lib/moltbook.js";
 import type { CredentialsFile, FeedPostSummary, Post } from "./types.js";
 import { fileExists, readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
+import { HttpError } from "./utils/http.js";
 import { logger } from "./utils/logger.js";
 import { askYesNo, closePrompt } from "./utils/prompt.js";
 
@@ -175,7 +176,14 @@ async function runAgentRegisterFlow(): Promise<void> {
   }
 
   const client = new MoltbookApiClient(config.api.base);
-  const result = await client.registerAgent(config.api.agentName, config.api.agentDescription);
+  let result;
+
+  try {
+    result = await client.registerAgent(config.api.agentName, config.api.agentDescription);
+  } catch (error: unknown) {
+    handleRegistrationConflict(error);
+    throw error;
+  }
 
   logger.divider("Agent Registration");
   console.log(`Agent name: ${config.api.agentName}`);
@@ -202,6 +210,37 @@ async function runAgentRegisterFlow(): Promise<void> {
 
   await writeJsonFile(config.files.credentialsPath, credentials);
   logger.success(`Credentials saved to ${config.files.credentialsPath}`);
+}
+
+async function runAgentRegisterDebugFlow(): Promise<void> {
+  const config = loadConfig();
+  const client = new MoltbookApiClient(config.api.base);
+
+  logger.divider("Agent Register Debug");
+  console.log(`Agent name: ${config.api.agentName}`);
+
+  try {
+    const result = await client.registerAgent(config.api.agentName, config.api.agentDescription);
+    console.log(safeFormatJson(result.raw));
+    logger.warn("Debug mode never writes credentials.json.");
+  } catch (error: unknown) {
+    if (error instanceof HttpError) {
+      if (error.status === 409) {
+        logger.warn(
+          "Registration conflict: this agent name may already be registered. Stop retrying registration and recover the original credentials or use the existing claimed agent."
+        );
+        logger.divider("Conflict Response");
+        console.log(safeFormatJson(error.body));
+        return;
+      }
+
+      logger.divider("Raw Error Response");
+      console.log(safeFormatJson(error.body));
+      throw error;
+    }
+
+    throw error;
+  }
 }
 
 async function runAgentStatusFlow(): Promise<void> {
@@ -359,6 +398,16 @@ function safeFormatJson(value: unknown): string {
   }
 }
 
+function handleRegistrationConflict(error: unknown): void {
+  if (error instanceof HttpError && error.status === 409) {
+    logger.warn(
+      "Registration conflict: this agent name may already be registered. Stop retrying registration and recover the original credentials or use the existing claimed agent."
+    );
+    logger.divider("Conflict Response");
+    console.log(safeFormatJson(error.body));
+  }
+}
+
 async function resolveApiKey(credentialsPath: string, envApiKey: string): Promise<string> {
   if (envApiKey) {
     return envApiKey;
@@ -396,6 +445,11 @@ async function main(): Promise<void> {
 
   if (config.cli.agentRegister) {
     await runAgentRegisterFlow();
+    return;
+  }
+
+  if (config.cli.agentRegisterDebug) {
+    await runAgentRegisterDebugFlow();
     return;
   }
 

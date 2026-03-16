@@ -37,6 +37,7 @@ export interface AppConfig {
     draftReply: boolean;
     agentSignup: boolean;
     agentRegister: boolean;
+    agentRegisterDebug: boolean;
     agentStatus: boolean;
     listPosts: boolean;
     postApi: boolean;

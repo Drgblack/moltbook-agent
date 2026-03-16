@@ -27,6 +27,7 @@ export function loadConfig(): AppConfig {
   const draftReply = process.argv.includes("--draft-reply");
   const agentSignup = process.argv.includes("--agent-signup");
   const agentRegister = process.argv.includes("--agent-register");
+  const agentRegisterDebug = process.argv.includes("--agent-register-debug");
   const agentStatus = process.argv.includes("--agent-status");
   const listPosts = process.argv.includes("--list-posts");
   const postApi = process.argv.includes("--post-api");
@@ -60,6 +61,7 @@ export function loadConfig(): AppConfig {
       draftReply,
       agentSignup,
       agentRegister,
+      agentRegisterDebug,
       agentStatus,
       listPosts,
       postApi,
@@ -77,6 +79,7 @@ export function printUsage(): void {
   npm run post:api
   npm run agent:signup
   npm run agent:register
+  npm run dev -- --agent-register-debug
   npm run agent:status
   npm run feed:api
   npm run reply:draft
