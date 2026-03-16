@@ -9,6 +9,7 @@ import {
   selectPost
 } from "./lib/posts.js";
 import { MoltbookClient } from "./lib/moltbook.js";
+import { writeTextFile } from "./utils/fs.js";
 import { logger } from "./utils/logger.js";
 import { askYesNo, closePrompt } from "./utils/prompt.js";
 
@@ -68,6 +69,27 @@ async function runPostingFlow(): Promise<void> {
       );
     }
 
+    const context = await client.inspectPostingContext();
+    logger.info(`Current Moltbook URL: ${context.currentUrl}`);
+
+    if (context.onLandingPage) {
+      throw new Error(
+        'Still on the Moltbook public landing page. Posting only works after agent signup, claim, and verification. Run "npm run agent:signup" first if the agent account has not been claimed yet.'
+      );
+    }
+
+    if (!context.likelyAuthenticated) {
+      throw new Error(
+        `Authenticated Moltbook agent UI was not detected. Logged-in markers found: ${context.loggedInAgentMarkers.join(", ") || "none"}. Stop here and complete login or claim verification manually before posting.`
+      );
+    }
+
+    if (!context.likelyValidComposerContext) {
+      throw new Error(
+        `The script is not yet inside a trusted posting context. Current URL: ${context.currentUrl}. Logged-in markers found: ${context.loggedInAgentMarkers.join(", ") || "none"}. Navigate further into the authenticated app before posting.`
+      );
+    }
+
     // The client owns the final publish confirmation so the last approval happens right before click.
     const result = await client.createPost(post.text, config.cli.dryRun);
 
@@ -83,6 +105,53 @@ async function runPostingFlow(): Promise<void> {
     }
 
     logger.warn(`Posting flow ended without a confirmed publish. Reason: ${result.reason}`);
+  } finally {
+    await client.close();
+  }
+}
+
+async function runAgentSignupFlow(): Promise<void> {
+  const config = loadConfig();
+  const client = new MoltbookClient({
+    url: "https://moltbook.com",
+    headed: config.browser.headed,
+    slowMoMs: config.browser.slowMoMs
+  });
+
+  try {
+    await client.launch();
+
+    const onLandingPage = await client.isLikelyLandingPage();
+    logger.info(
+      onLandingPage
+        ? "Public Moltbook landing page detected."
+        : `Landing page markers were not conclusive. Current URL: ${client.getCurrentUrl()}`
+    );
+
+    const clickedAgentEntry = await client.clickAgentSignupEntry();
+    if (clickedAgentEntry) {
+      logger.success('Clicked "I\'m an Agent".');
+    } else {
+      logger.warn('Could not find an "I\'m an Agent" entry automatically. Use manual takeover.');
+    }
+
+    await client.pauseForManualStep(
+      "Manual takeover active. Complete captcha, auth, and any agent onboarding steps until a claim link or claim screen is visible."
+    );
+
+    const claimLink = await client.captureClaimLink();
+
+    logger.divider("Claim Link");
+    if (!claimLink) {
+      logger.warn(
+        `No claim link was detected on screen. Current URL: ${client.getCurrentUrl()}. If the claim link is visible but not machine-readable, copy it manually.`
+      );
+      return;
+    }
+
+    console.log(claimLink);
+    await writeTextFile(config.files.claimLinkPath, `${claimLink}\n`);
+    logger.success(`Claim link saved to ${config.files.claimLinkPath}`);
   } finally {
     await client.close();
   }
@@ -137,6 +206,11 @@ async function main(): Promise<void> {
 
   if (config.cli.listPosts) {
     await runListPosts(config.files.postsPath, config.files.statePath);
+    return;
+  }
+
+  if (config.cli.agentSignup) {
+    await runAgentSignupFlow();
     return;
   }
 

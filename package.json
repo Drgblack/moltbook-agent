@@ -8,6 +8,7 @@
     "dev": "tsx src/index.ts",
     "post": "tsx src/index.ts",
     "post:dry": "tsx src/index.ts --dry-run",
+    "agent:signup": "tsx src/index.ts --agent-signup",
     "reply:draft": "tsx src/index.ts --draft-reply",
     "list-posts": "tsx src/index.ts --list-posts",
     "typecheck": "tsc --noEmit"

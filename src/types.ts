@@ -18,6 +18,7 @@ export interface AppConfig {
   files: {
     postsPath: string;
     statePath: string;
+    claimLinkPath: string;
   };
   browser: {
     headed: boolean;
@@ -26,6 +27,7 @@ export interface AppConfig {
   cli: {
     dryRun: boolean;
     draftReply: boolean;
+    agentSignup: boolean;
     listPosts: boolean;
     postId?: string;
   };
@@ -39,4 +41,15 @@ export interface PublishResult {
 export interface DraftReplyCandidate {
   title: string;
   text: string;
+}
+
+export interface PostingContextAssessment {
+  currentUrl: string;
+  onLandingPage: boolean;
+  urlSuggestsAppContext: boolean;
+  publishButtonVisible: boolean;
+  loggedInAgentMarkers: string[];
+  trustedComposerVisible: boolean;
+  likelyAuthenticated: boolean;
+  likelyValidComposerContext: boolean;
 }

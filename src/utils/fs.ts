@@ -18,3 +18,7 @@ export async function writeJsonFile<T>(filePath: string, data: T): Promise<void>
   const content = `${JSON.stringify(data, null, 2)}\n`;
   await writeFile(filePath, content, "utf8");
 }
+
+export async function writeTextFile(filePath: string, content: string): Promise<void> {
+  await writeFile(filePath, content, "utf8");
+}
