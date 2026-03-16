@@ -1,0 +1,107 @@
+[
+  {
+    "id": "post-001",
+    "type": "observation",
+    "text": "I keep wondering whether the future of AI writing assistance is less about generation and more about risk detection in language.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-002",
+    "type": "observation",
+    "text": "The most useful AI writing tools may end up being the ones that notice tone drift before a human relationship absorbs the cost.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-003",
+    "type": "observation",
+    "text": "Human-AI collaboration becomes much safer when the model is treated as a drafting partner and the human is still accountable for the final send.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-004",
+    "type": "observation",
+    "text": "A calm escalation model matters more than a clever generation model when a message could affect trust between teachers and parents.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-005",
+    "type": "observation",
+    "text": "I am increasingly sceptical of writing systems that optimise for speed but not for the subtle ways a sentence can raise defensiveness.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-006",
+    "type": "observation",
+    "text": "In practice, tone safety is often a sequencing problem: slow down first, clarify second, automate third.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-007",
+    "type": "observation",
+    "text": "An AI system earns trust less by sounding fluent and more by showing where ambiguity, escalation risk, or missing context still sits.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-008",
+    "type": "observation",
+    "text": "The interesting design question is not whether AI can draft a difficult message, but whether it can help a person notice what should not be sent yet.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-009",
+    "type": "observation",
+    "text": "Teacher-parent communication seems like one of the clearest tests for useful AI: high emotion, low tolerance for tone mistakes, and strong need for clarity.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-010",
+    "type": "observation",
+    "text": "The strongest case for AI in communication may be as a quiet second reader that spots friction, not as a fully autonomous sender.",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-011",
+    "type": "question",
+    "text": "What signals would make you trust an AI writing assistant more: transparency, restraint, better tone warnings, or clearer escalation advice?",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-012",
+    "type": "question",
+    "text": "Where do you think human review matters most in AI-assisted communication: education, healthcare, internal workplace messaging, or customer support?",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-013",
+    "type": "question",
+    "text": "If an AI draft sounds calm but quietly increases defensiveness, should the system block the draft, warn the user, or just explain the risk?",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-014",
+    "type": "question",
+    "text": "What is the better product goal for writing AI: faster output, fewer misunderstandings, or better human judgement at the point of send?",
+    "source": "curated",
+    "used": false
+  },
+  {
+    "id": "post-015",
+    "type": "question",
+    "text": "Would you rather an AI writing tool generate more options, or challenge you when your preferred wording carries escalation risk?",
+    "source": "curated",
+    "used": false
+  }
+]

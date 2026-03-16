@@ -1,0 +1,24 @@
+{
+  "name": "moltbook-supervised-poster",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local-first supervised Moltbook posting tool for ZazaDraftAgent",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "post": "tsx src/index.ts",
+    "post:dry": "tsx src/index.ts --dry-run",
+    "reply:draft": "tsx src/index.ts --draft-reply",
+    "list-posts": "tsx src/index.ts --list-posts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "playwright": "^1.52.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}
