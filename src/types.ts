@@ -15,10 +15,18 @@ export interface StateFile {
 
 export interface AppConfig {
   moltbookUrl: string;
+  api: {
+    base: string;
+    apiKey: string;
+    agentName: string;
+    agentDescription: string;
+    submoltName: string;
+  };
   files: {
     postsPath: string;
     statePath: string;
     claimLinkPath: string;
+    credentialsPath: string;
   };
   browser: {
     headed: boolean;
@@ -28,7 +36,11 @@ export interface AppConfig {
     dryRun: boolean;
     draftReply: boolean;
     agentSignup: boolean;
+    agentRegister: boolean;
+    agentStatus: boolean;
     listPosts: boolean;
+    postApi: boolean;
+    feedApi: boolean;
     postId?: string;
   };
 }
@@ -52,4 +64,43 @@ export interface PostingContextAssessment {
   trustedComposerVisible: boolean;
   likelyAuthenticated: boolean;
   likelyValidComposerContext: boolean;
+}
+
+export interface CredentialsFile {
+  api_base: string;
+  api_key: string;
+  claim_url?: string;
+  verification_code?: string;
+  agent_name: string;
+  agent_description: string;
+  saved_at: string;
+}
+
+export interface AgentRegistrationResult {
+  apiKey: string | null;
+  claimUrl: string | null;
+  verificationCode: string | null;
+  raw: unknown;
+}
+
+export interface AgentStatusResult {
+  status: string;
+  raw: unknown;
+}
+
+export interface ApiPostAttempt {
+  success: boolean;
+  verificationRequired: boolean;
+  challengeDetails: string | null;
+  postId: string | null;
+  raw: unknown;
+}
+
+export interface FeedPostSummary {
+  id: string | null;
+  title: string | null;
+  content: string;
+  submoltName: string | null;
+  authorName: string | null;
+  createdAt: string | null;
 }

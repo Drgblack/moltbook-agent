@@ -1,4 +1,5 @@
 import { loadConfig, printUsage } from "./config.js";
+import { MoltbookApiClient } from "./lib/moltbook-api.js";
 import {
   draftReplyCandidates,
   formatPost,
@@ -9,7 +10,8 @@ import {
   selectPost
 } from "./lib/posts.js";
 import { MoltbookClient } from "./lib/moltbook.js";
-import { writeTextFile } from "./utils/fs.js";
+import type { CredentialsFile, FeedPostSummary, Post } from "./types.js";
+import { fileExists, readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
 import { logger } from "./utils/logger.js";
 import { askYesNo, closePrompt } from "./utils/prompt.js";
 
@@ -74,7 +76,7 @@ async function runPostingFlow(): Promise<void> {
 
     if (context.onLandingPage) {
       throw new Error(
-        'Still on the Moltbook public landing page. Posting only works after agent signup, claim, and verification. Run "npm run agent:signup" first if the agent account has not been claimed yet.'
+        'Still on the Moltbook public landing page. Posting only works after agent signup, claim, and verification. Prefer "npm run post:api" once credentials are ready, or use "npm run agent:signup" for browser onboarding.'
       );
     }
 
@@ -90,7 +92,7 @@ async function runPostingFlow(): Promise<void> {
       );
     }
 
-    // The client owns the final publish confirmation so the last approval happens right before click.
+    // Browser posting remains available, but the API path is now preferred.
     const result = await client.createPost(post.text, config.cli.dryRun);
 
     if (result.published) {
@@ -157,6 +159,134 @@ async function runAgentSignupFlow(): Promise<void> {
   }
 }
 
+async function runAgentRegisterFlow(): Promise<void> {
+  const config = loadConfig();
+
+  if (await fileExists(config.files.credentialsPath)) {
+    const overwrite = await askYesNo(
+      `credentials.json already exists at ${config.files.credentialsPath}. Overwrite it?`,
+      false
+    );
+
+    if (!overwrite) {
+      logger.warn("Registration cancelled before overwriting credentials.json.");
+      return;
+    }
+  }
+
+  const client = new MoltbookApiClient(config.api.base);
+  const result = await client.registerAgent(config.api.agentName, config.api.agentDescription);
+
+  logger.divider("Agent Registration");
+  console.log(`Agent name: ${config.api.agentName}`);
+  console.log(`API key: ${result.apiKey ?? "[not returned]"}`);
+  console.log(`Claim URL: ${result.claimUrl ?? "[not returned]"}`);
+  console.log(`Verification code: ${result.verificationCode ?? "[not returned]"}`);
+
+  if (!result.apiKey) {
+    throw new Error(
+      "The Moltbook API did not return an api_key. credentials.json was not written because the registration response is incomplete."
+    );
+  }
+
+  const credentials: CredentialsFile = {
+    api_base: config.api.base,
+    api_key: result.apiKey,
+    claim_url: result.claimUrl ?? undefined,
+    verification_code: result.verificationCode ?? undefined,
+    agent_name: config.api.agentName,
+    agent_description: config.api.agentDescription,
+    saved_at: new Date().toISOString()
+  };
+
+  await writeJsonFile(config.files.credentialsPath, credentials);
+  logger.success(`Credentials saved to ${config.files.credentialsPath}`);
+}
+
+async function runAgentStatusFlow(): Promise<void> {
+  const config = loadConfig();
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const result = await client.getAgentStatus();
+
+  logger.divider("Agent Status");
+  console.log(`Status: ${result.status}`);
+
+  if (result.status === "pending_claim") {
+    logger.warn("Agent is still pending claim. A human must complete the claim/verification flow.");
+    return;
+  }
+
+  if (result.status === "claimed") {
+    logger.success("Agent is claimed.");
+    return;
+  }
+
+  logger.warn(`Unexpected status returned by the API: ${result.status}`);
+}
+
+async function runApiPostingFlow(): Promise<void> {
+  const config = loadConfig();
+  const [posts, state] = await Promise.all([
+    loadPosts(config.files.postsPath),
+    loadState(config.files.statePath)
+  ]);
+  const post = selectPost(posts, state, config.cli.postId);
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const title = deriveShortTitle(post);
+
+  logger.divider("Chosen API Post");
+  console.log(`ID: ${post.id}`);
+  console.log(`Title: ${title}`);
+  console.log(`Submolt: ${config.api.submoltName}`);
+  console.log("");
+  console.log(post.text);
+  logger.divider();
+
+  const proceed = await askYesNo("Send this post through the Moltbook API?", false);
+  if (!proceed) {
+    logger.warn("API posting cancelled before request.");
+    return;
+  }
+
+  const result = await client.createPost(title, post.text, config.api.submoltName);
+
+  if (result.verificationRequired) {
+    logger.warn("The API reported a verification challenge. No post was marked as used.");
+    logger.divider("Verification Challenge");
+    console.log(result.challengeDetails ?? "[challenge details not provided]");
+    return;
+  }
+
+  if (!result.success) {
+    throw new Error("The Moltbook API did not confirm post creation.");
+  }
+
+  await recordPublishedPost(config.files.postsPath, config.files.statePath, post.id);
+  logger.success(`API post succeeded${result.postId ? ` with id ${result.postId}` : ""}.`);
+  logger.success(`Post ${post.id} recorded as used in state.json.`);
+}
+
+async function runFeedApiFlow(): Promise<void> {
+  const config = loadConfig();
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const posts = await client.fetchFeed(10);
+
+  logger.divider("Recent Moltbook Posts");
+
+  if (posts.length === 0) {
+    logger.warn("No posts were returned by the API.");
+    return;
+  }
+
+  posts.forEach((post, index) => {
+    console.log(formatFeedSummary(post, index + 1));
+    console.log("");
+  });
+}
+
 async function runDraftReplyFlow(): Promise<void> {
   const config = loadConfig();
   const client = new MoltbookClient({
@@ -196,6 +326,52 @@ async function runDraftReplyFlow(): Promise<void> {
   }
 }
 
+function deriveShortTitle(post: Post): string {
+  const firstSentence = post.text.split(/[.!?]/)[0]?.trim() || post.text.trim();
+  const collapsed = firstSentence.replace(/\s+/g, " ");
+
+  if (collapsed.length <= 72) {
+    return collapsed;
+  }
+
+  return `${collapsed.slice(0, 69).trim()}...`;
+}
+
+function formatFeedSummary(post: FeedPostSummary, index: number): string {
+  const summary = post.content.replace(/\s+/g, " ").trim();
+  const excerpt = summary.length > 120 ? `${summary.slice(0, 117)}...` : summary;
+
+  return [
+    `${index}. ${post.title || "[untitled]"}`,
+    `   Author: ${post.authorName || "unknown"}`,
+    `   Submolt: ${post.submoltName || "unknown"}`,
+    `   Created: ${post.createdAt || "unknown"}`,
+    `   ${excerpt}`
+  ].join("\n");
+}
+
+async function resolveApiKey(credentialsPath: string, envApiKey: string): Promise<string> {
+  if (envApiKey) {
+    return envApiKey;
+  }
+
+  if (!(await fileExists(credentialsPath))) {
+    throw new Error(
+      `MOLTBOOK_API_KEY is missing and ${credentialsPath} does not exist. Run "npm run agent:register" first or set MOLTBOOK_API_KEY.`
+    );
+  }
+
+  const credentials = await readJsonFile<Partial<CredentialsFile>>(credentialsPath);
+
+  if (!credentials.api_key) {
+    throw new Error(
+      `credentials.json at ${credentialsPath} does not contain api_key. Run "npm run agent:register" again or set MOLTBOOK_API_KEY.`
+    );
+  }
+
+  return credentials.api_key;
+}
+
 async function main(): Promise<void> {
   const config = loadConfig();
 
@@ -206,6 +382,26 @@ async function main(): Promise<void> {
 
   if (config.cli.listPosts) {
     await runListPosts(config.files.postsPath, config.files.statePath);
+    return;
+  }
+
+  if (config.cli.agentRegister) {
+    await runAgentRegisterFlow();
+    return;
+  }
+
+  if (config.cli.agentStatus) {
+    await runAgentStatusFlow();
+    return;
+  }
+
+  if (config.cli.postApi) {
+    await runApiPostingFlow();
+    return;
+  }
+
+  if (config.cli.feedApi) {
+    await runFeedApiFlow();
     return;
   }
 

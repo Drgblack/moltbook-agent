@@ -1,34 +1,34 @@
 # Moltbook Supervised Poster
 
-A small local-first Playwright CLI for supervised posting on Moltbook with the `ZazaDraftAgent` account.
+A local-first TypeScript CLI for Moltbook using the official Moltbook API as the preferred integration path, with Playwright browser automation retained as a secondary fallback.
 
-The tool is designed to stay simple:
+## Preferred integration
 
-- TypeScript + Node.js
-- Playwright browser automation
-- local JSON content storage
-- local JSON state tracking
+API-first is now the default recommendation for:
+
+- agent registration
+- agent status checks
+- feed reads
+- supervised post creation
+
+Browser automation remains available for:
+
+- fallback onboarding
+- manual claim flows
+- UI-only inspection
+- reply drafting from the visible feed
+
+## Core behaviour
+
+- local JSON content in `posts.json`
+- local JSON post state in `state.json`
+- local JSON credentials in `credentials.json`
 - no database
-- no scheduling
-- no unattended posting
+- no scheduler
+- no background posting
 - no automatic reply posting
-- no external APIs required
 
-## What it does
-
-- loads posts from `posts.json`
-- tracks used posts in `state.json`
-- selects the first unused post by default
-- shows the chosen post in the terminal before doing anything
-- opens Moltbook in a headed Chromium browser
-- supports agent signup and claim-link capture
-- supports manual takeover for login, captcha, or verification
-- navigates to a composer using resilient selector fallbacks
-- supports dry runs that stop before clicking publish
-- asks for explicit terminal confirmation before every publish
-- optionally scans the visible feed and drafts reply candidates for review only
-
-Humans can observe Moltbook publicly, but agent accounts must be signed up, claimed, and verified before supervised posting will work.
+Humans can observe Moltbook publicly, but agent accounts must be registered, claimed, and verified before posting succeeds.
 
 ## Setup
 
@@ -40,7 +40,7 @@ Humans can observe Moltbook publicly, but agent accounts must be signed up, clai
 npm install
 ```
 
-4. Install Playwright browsers if prompted:
+4. Install Playwright browsers if you plan to use fallback browser mode:
 
 ```bash
 npx playwright install chromium
@@ -48,94 +48,125 @@ npx playwright install chromium
 
 ## Configuration
 
-Create a local `.env` file if you want to override defaults:
+Create a local `.env` file:
 
 ```env
 MOLTBOOK_URL=https://moltbook.com
+MOLTBOOK_API_BASE=https://www.moltbook.com/api/v1
+MOLTBOOK_API_KEY=
+MOLTBOOK_AGENT_NAME=ZazaDraftAgent
+MOLTBOOK_AGENT_DESCRIPTION=AI agent studying how wording influences human reactions in teacher-parent communication. Interested in tone safety, escalation risk, and calm professional language.
 BROWSER_HEADLESS=false
 SLOW_MO_MS=50
 POSTS_FILE=./posts.json
 STATE_FILE=./state.json
 ```
 
-Headed mode is the default because this tool is intended to be supervised.
+Safety rule: API calls are restricted to `https://www.moltbook.com/api/v1`. The project refuses to send Moltbook API keys anywhere else.
 
-## How to run
+## API-first commands
 
-Run the normal supervised posting flow:
+Register an agent through the API:
+
+```bash
+npm run agent:register
+```
+
+This calls `POST /agents/register`, prints any returned `api_key`, `claim_url`, and `verification_code`, and saves them to `credentials.json`.
+
+Check agent claim status:
+
+```bash
+npm run agent:status
+```
+
+This calls `GET /agents/status` and reports whether the agent is `pending_claim` or `claimed`.
+
+Post through the API:
+
+```bash
+npm run post:api
+```
+
+This:
+
+- selects the first unused post unless `--post-id` is provided
+- derives a short title
+- asks for confirmation before sending
+- calls `POST /posts`
+- only marks the post as used if the API confirms success
+- stops safely if the API reports a verification challenge
+
+Read recent posts through the API:
+
+```bash
+npm run feed:api
+```
+
+This calls `GET /posts?sort=new&limit=10` and prints a compact readable summary.
+
+## Claim and verification
+
+Registration can return:
+
+- `api_key`
+- `claim_url`
+- `verification_code`
+
+The human operator must complete claim and verification manually. Posting may still require a verification challenge even after registration, and the tool does not attempt to solve that challenge automatically.
+
+## Browser fallback commands
+
+Fallback browser posting:
 
 ```bash
 npm run post
 ```
 
-Run a dry run that fills the composer but stops before publishing:
+Dry-run browser posting:
 
 ```bash
 npm run post:dry
 ```
 
-Run the agent signup and claim-link capture flow:
+Browser-based agent signup helper:
 
 ```bash
 npm run agent:signup
 ```
 
-Run with a specific post id:
-
-```bash
-npm run post -- --post-id post-004
-```
-
-List all unused posts:
-
-```bash
-npm run list-posts
-```
-
-Draft candidate replies from the visible feed without posting:
+Reply drafting from the visible feed:
 
 ```bash
 npm run reply:draft
 ```
 
-## Agent signup and claim flow
-
-Moltbook's public homepage is observable by humans, but agent accounts need onboarding before they can post.
-
-Use the signup helper when you need to initialise or claim the `ZazaDraftAgent` account:
+List unused local posts:
 
 ```bash
-npm run agent:signup
+npm run list-posts
 ```
 
-The flow will:
+## Browser fallback notes
 
-- open `https://moltbook.com`
-- detect whether the public landing page is still showing
-- click `I'm an Agent` if it can find it
-- allow manual takeover for captcha, auth, and unknown onboarding steps
-- try to capture any visible claim link
-- save the first claim link it finds to `claim-link.txt`
+Browser mode is fallback only now. The Moltbook public landing page can contain inputs or editable elements that resemble a composer, so browser posting refuses to continue unless it sees authenticated app context markers.
 
-Posting only works after the agent has been claimed and any Moltbook verification steps are complete.
+Use browser mode when:
 
-## Manual takeover
+- API registration succeeded but a human still needs to complete claim
+- captcha or verification must be handled manually
+- a UI-only inspection step is required
 
-The script supports manual takeover for:
+## Local files
 
-- login
-- captcha
-- two-factor or verification prompts
-- unstable selectors
-- navigation that is easier to complete by hand
-
-When prompted, complete the step in the browser and then return to the terminal to continue.
-
-If the browser is still on the public landing page or in a non-authenticated area, the posting flow now stops instead of trying to treat generic fields as a composer.
+- `posts.json`: source post content
+- `state.json`: used post tracking
+- `credentials.json`: saved API credentials from registration
+- `claim-link.txt`: optional browser-captured claim link
 
 ## Updating posts
 
-Edit `posts.json` directly. Each post should have this shape:
+Edit `posts.json` directly. Each post should look like:
 
 ```json
 {
@@ -147,44 +178,35 @@ Edit `posts.json` directly. Each post should have this shape:
 }
 ```
 
-The primary source of truth for whether a post has already been published is `state.json`. The script may also mark the matching post object as `used: true` for convenience.
+`state.json` remains the primary publish ledger.
 
 ## Safety model
 
-- every publish requires explicit terminal confirmation
-- `--dry-run` never clicks the publish button
-- reply drafting never posts anything
-- `--agent-signup` stops after claim-link capture and never posts
-- there is no scheduler or background job support
-- if selectors are uncertain, the script fails safely and tells you what to do manually
+- API-first integration is preferred
+- browser automation is fallback only
+- every post still requires terminal confirmation
+- the tool never sends API keys anywhere except `https://www.moltbook.com/api/v1`
+- missing credentials fail safely
+- verification challenges are printed for a human to handle
+- no unattended posting
+- no automatic reply posting
 
 ## Known limitations
 
-- Moltbook selectors may change at any time
-- the current selector strategy uses fallback candidates in `src/lib/moltbook.ts`
-- login flow is intentionally not automated because captcha and verification are likely
-- public landing page elements can resemble composer-like inputs, so the script now requires authenticated context hints before it trusts a composer
-- publish success may require human confirmation if Moltbook does not expose a stable success signal
-
-## Selector maintenance
-
-If Moltbook updates its UI, review the TODO blocks in:
-
-- `src/lib/moltbook.ts`
-
-That file centralises the likely selectors for:
-
-- composer textboxes
-- compose buttons
-- publish buttons
-- feed items
+- exact Moltbook API response shapes may evolve, so the API client uses conservative field-detection heuristics
+- posting may require a verification challenge that must be completed manually
+- browser selectors may still need maintenance if the Moltbook UI changes
 
 ## Scripts
 
 - `npm run dev`
 - `npm run post`
 - `npm run post:dry`
+- `npm run post:api`
 - `npm run agent:signup`
+- `npm run agent:register`
+- `npm run agent:status`
+- `npm run feed:api`
 - `npm run reply:draft`
 - `npm run list-posts`
 - `npm run typecheck`
