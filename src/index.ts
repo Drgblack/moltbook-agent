@@ -184,8 +184,9 @@ async function runAgentRegisterFlow(): Promise<void> {
   console.log(`Verification code: ${result.verificationCode ?? "[not returned]"}`);
 
   if (!result.apiKey) {
+    const responseShape = safeFormatJson(result.raw);
     throw new Error(
-      "The Moltbook API did not return an api_key. credentials.json was not written because the registration response is incomplete."
+      `The Moltbook API did not return an api_key in either the top-level response or nested agent object. credentials.json was not written. Raw response: ${responseShape}`
     );
   }
 
@@ -348,6 +349,14 @@ function formatFeedSummary(post: FeedPostSummary, index: number): string {
     `   Created: ${post.createdAt || "unknown"}`,
     `   ${excerpt}`
   ].join("\n");
+}
+
+function safeFormatJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 }
 
 async function resolveApiKey(credentialsPath: string, envApiKey: string): Promise<string> {

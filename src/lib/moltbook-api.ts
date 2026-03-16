@@ -32,6 +32,10 @@ function findStringField(record: JsonRecord, keys: string[]): string | null {
   return null;
 }
 
+function getNestedRecord(record: JsonRecord, key: string): JsonRecord {
+  return isRecord(record[key]) ? record[key] : {};
+}
+
 function formatUnknown(value: unknown): string | null {
   if (typeof value === "string") {
     return value.trim() || null;
@@ -132,11 +136,18 @@ export class MoltbookApiClient {
     });
 
     const record = isRecord(payload) ? payload : {};
+    const nestedAgent = getNestedRecord(record, "agent");
 
     return {
-      apiKey: findStringField(record, ["api_key"]),
-      claimUrl: findStringField(record, ["claim_url"]),
-      verificationCode: findStringField(record, ["verification_code"]),
+      apiKey:
+        findStringField(record, ["api_key"]) ||
+        findStringField(nestedAgent, ["api_key"]),
+      claimUrl:
+        findStringField(record, ["claim_url"]) ||
+        findStringField(nestedAgent, ["claim_url"]),
+      verificationCode:
+        findStringField(record, ["verification_code"]) ||
+        findStringField(nestedAgent, ["verification_code"]),
       raw: payload
     };
   }
@@ -148,7 +159,7 @@ export class MoltbookApiClient {
       headers: this.buildAuthHeaders()
     });
     const record = isRecord(payload) ? payload : {};
-    const nestedAgent = isRecord(record.agent) ? record.agent : {};
+    const nestedAgent = getNestedRecord(record, "agent");
 
     return {
       status:
@@ -176,7 +187,7 @@ export class MoltbookApiClient {
       });
 
       const record = isRecord(payload) ? payload : {};
-      const nestedPost = isRecord(record.post) ? record.post : {};
+      const nestedPost = getNestedRecord(record, "post");
       const challengeDetails = extractChallengeDetails(payload);
 
       return {
