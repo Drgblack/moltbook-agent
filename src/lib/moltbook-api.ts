@@ -2,7 +2,8 @@ import type {
   AgentRegistrationResult,
   AgentStatusResult,
   ApiPostAttempt,
-  FeedPostSummary
+  FeedPostSummary,
+  HomeSummary
 } from "../types.js";
 import {
   HttpError,
@@ -20,6 +21,10 @@ function getString(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function getNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
 function findStringField(record: JsonRecord, keys: string[]): string | null {
   for (const key of keys) {
     const direct = getString(record[key]);
@@ -34,6 +39,17 @@ function findStringField(record: JsonRecord, keys: string[]): string | null {
 
 function getNestedRecord(record: JsonRecord, key: string): JsonRecord {
   return isRecord(record[key]) ? record[key] : {};
+}
+
+function getStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => getString(item))
+      .filter((item): item is string => Boolean(item));
+  }
+
+  const single = getString(value);
+  return single ? [single] : [];
 }
 
 function formatUnknown(value: unknown): string | null {
@@ -226,6 +242,45 @@ export class MoltbookApiClient {
     });
 
     return extractFeedItems(payload);
+  }
+
+  async fetchHome(): Promise<HomeSummary> {
+    const payload = await requestJson<unknown>({
+      method: "GET",
+      url: this.buildUrl("/home"),
+      headers: this.buildAuthHeaders()
+    });
+    const record = isRecord(payload) ? payload : {};
+    const home = getNestedRecord(record, "home");
+    const account = getNestedRecord(record, "account");
+    const agent = getNestedRecord(record, "agent");
+    const notifications = getNestedRecord(record, "notifications");
+
+    return {
+      accountName:
+        findStringField(record, ["account_name", "name", "username"]) ||
+        findStringField(account, ["name", "username"]) ||
+        findStringField(agent, ["name", "username"]),
+      karma:
+        getNumber(record.karma) ??
+        getNumber(home.karma) ??
+        getNumber(account.karma) ??
+        null,
+      unreadNotifications:
+        getNumber(record.unread_notifications) ??
+        getNumber(notifications.unread_count) ??
+        getNumber(home.unread_notifications) ??
+        null,
+      recentActivity:
+        getStringArray(record.recent_activity).length > 0
+          ? getStringArray(record.recent_activity)
+          : getStringArray(home.recent_activity),
+      whatToDoNext:
+        getStringArray(record.what_to_do_next).length > 0
+          ? getStringArray(record.what_to_do_next)
+          : getStringArray(home.what_to_do_next),
+      raw: payload
+    };
   }
 
   private buildUrl(path: string): string {

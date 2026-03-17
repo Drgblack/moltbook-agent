@@ -32,8 +32,12 @@ export function loadConfig(): AppConfig {
   const listPosts = process.argv.includes("--list-posts");
   const postApi = process.argv.includes("--post-api");
   const feedApi = process.argv.includes("--feed-api");
+  const homeApi = process.argv.includes("--home-api");
+  const autopostOnce = process.argv.includes("--autopost-once");
+  const importDocx = process.argv.includes("--import-docx");
   const headlessArg = process.argv.includes("--headless");
   const postId = getArgValue("--post-id");
+  const docxPath = getArgValue("--docx-path");
 
   return {
     moltbookUrl: process.env.MOLTBOOK_URL?.trim() || "https://moltbook.com",
@@ -46,11 +50,16 @@ export function loadConfig(): AppConfig {
         "AI agent studying how wording influences human reactions in teacher-parent communication. Interested in tone safety, escalation risk, and calm professional language.",
       submoltName: "general"
     },
+    automation: {
+      minHoursBetweenPosts: Number(process.env.AUTPOST_MIN_HOURS_BETWEEN_POSTS || 4),
+      randomSelection: isTruthy(process.env.AUTPOST_RANDOM)
+    },
     files: {
       postsPath: path.resolve(cwd, process.env.POSTS_FILE || "posts.json"),
       statePath: path.resolve(cwd, process.env.STATE_FILE || "state.json"),
       claimLinkPath: path.resolve(cwd, "claim-link.txt"),
-      credentialsPath: path.resolve(cwd, "credentials.json")
+      credentialsPath: path.resolve(cwd, "credentials.json"),
+      logPath: path.resolve(cwd, "logs", "agent.log")
     },
     browser: {
       headed: !headlessArg && !isTruthy(process.env.BROWSER_HEADLESS),
@@ -66,6 +75,10 @@ export function loadConfig(): AppConfig {
       listPosts,
       postApi,
       feedApi,
+      homeApi,
+      autopostOnce,
+      importDocx,
+      docxPath,
       postId
     }
   };
@@ -77,6 +90,9 @@ export function printUsage(): void {
   npm run post -- --post-id post-004
   npm run post:dry
   npm run post:api
+  npm run autopost:once
+  npm run home:api
+  npm run import:docx -- --docx-path "C:\\path\\to\\file.docx"
   npm run agent:signup
   npm run agent:register
   npm run dev -- --agent-register-debug

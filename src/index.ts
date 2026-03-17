@@ -1,4 +1,5 @@
 import { loadConfig, printUsage } from "./config.js";
+import { importPostsFromDocx } from "./lib/docx-import.js";
 import { MoltbookApiClient } from "./lib/moltbook-api.js";
 import {
   draftReplyCandidates,
@@ -10,11 +11,12 @@ import {
   selectPost
 } from "./lib/posts.js";
 import { MoltbookClient } from "./lib/moltbook.js";
-import type { CredentialsFile, FeedPostSummary, Post } from "./types.js";
+import type { CredentialsFile, FeedPostSummary, HomeSummary, Post } from "./types.js";
+import { appendAgentLog } from "./utils/agent-log.js";
 import { fileExists, readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
 import { HttpError } from "./utils/http.js";
 import { logger } from "./utils/logger.js";
-import { askYesNo, closePrompt } from "./utils/prompt.js";
+import { ask, askYesNo, closePrompt } from "./utils/prompt.js";
 
 async function runListPosts(postsPath: string, statePath: string): Promise<void> {
   const [posts, state] = await Promise.all([loadPosts(postsPath), loadState(statePath)]);
@@ -32,6 +34,71 @@ async function runListPosts(postsPath: string, statePath: string): Promise<void>
   }
 }
 
+async function runImportDocxFlow(): Promise<void> {
+  const config = loadConfig();
+  const docxPath = config.cli.docxPath;
+
+  if (!docxPath) {
+    throw new Error('Missing --docx-path. Example: npm run import:docx -- --docx-path "C:\\path\\to\\file.docx"');
+  }
+
+  await appendAgentLog(config.files.logPath, "import-started", `DOCX import started from ${docxPath}`);
+
+  const result = await importPostsFromDocx(docxPath);
+  logger.divider("DOCX Import Preview");
+  console.log(`Source file: ${docxPath}`);
+  console.log(`Raw candidate blocks: ${result.rawBlockCount}`);
+  console.log(`Unique imported posts: ${result.uniqueBlockCount}`);
+
+  const existingPosts = (await fileExists(config.files.postsPath))
+    ? await loadPosts(config.files.postsPath)
+    : [];
+
+  let finalPosts = result.posts;
+
+  if (existingPosts.length > 0) {
+    const choice = (
+      await ask(
+        `posts.json already contains ${existingPosts.length} items. Choose mode: [1] replace [2] append deduplicated [n] cancel `
+      )
+    )
+      .trim()
+      .toLowerCase();
+
+    if (choice === "1") {
+      const confirmed = await askYesNo("Replace posts.json with imported posts?", false);
+
+      if (!confirmed) {
+        logger.warn("DOCX import cancelled before replace.");
+        await appendAgentLog(config.files.logPath, "import-completed", "DOCX import cancelled before replace");
+        return;
+      }
+    } else if (choice === "2") {
+      finalPosts = appendDeduplicatedPosts(existingPosts, result.posts);
+    } else {
+      logger.warn("DOCX import cancelled.");
+      await appendAgentLog(config.files.logPath, "import-completed", "DOCX import cancelled");
+      return;
+    }
+  } else {
+    const confirmed = await askYesNo("Write imported posts to posts.json?", false);
+
+    if (!confirmed) {
+      logger.warn("DOCX import cancelled.");
+      await appendAgentLog(config.files.logPath, "import-completed", "DOCX import cancelled");
+      return;
+    }
+  }
+
+  await writeJsonFile(config.files.postsPath, finalPosts);
+  logger.success(`Saved ${finalPosts.length} posts to ${config.files.postsPath}`);
+  await appendAgentLog(
+    config.files.logPath,
+    "import-completed",
+    `DOCX import completed from ${docxPath}; saved ${finalPosts.length} posts`
+  );
+}
+
 async function runPostingFlow(): Promise<void> {
   const config = loadConfig();
   const [posts, state] = await Promise.all([
@@ -39,7 +106,6 @@ async function runPostingFlow(): Promise<void> {
     loadState(config.files.statePath)
   ]);
 
-  // The first unused post is the safe default unless the operator explicitly targets one.
   const post = selectPost(posts, state, config.cli.postId);
 
   logger.divider("Chosen Post");
@@ -68,7 +134,7 @@ async function runPostingFlow(): Promise<void> {
 
     if (needsManualTakeover) {
       await client.pauseForManualStep(
-        "Manual takeover active. Log in to Moltbook as ZazaDraftAgent, complete any checks, and navigate if needed."
+        "Manual takeover active. Log in to Moltbook as ZazaDraftAgentAI, complete any checks, and navigate if needed."
       );
     }
 
@@ -77,7 +143,7 @@ async function runPostingFlow(): Promise<void> {
 
     if (context.onLandingPage) {
       throw new Error(
-        'Still on the Moltbook public landing page. Posting only works after agent signup, claim, and verification. Prefer "npm run post:api" once credentials are ready, or use "npm run agent:signup" for browser onboarding.'
+        'Still on the Moltbook public landing page. Posting only works after agent signup, claim, and verification. Prefer "npm run post:api" or "npm run autopost:once" once credentials are ready.'
       );
     }
 
@@ -93,7 +159,6 @@ async function runPostingFlow(): Promise<void> {
       );
     }
 
-    // Browser posting remains available, but the API path is now preferred.
     const result = await client.createPost(post.text, config.cli.dryRun);
 
     if (result.published) {
@@ -265,6 +330,16 @@ async function runAgentStatusFlow(): Promise<void> {
   logger.warn(`Unexpected status returned by the API: ${result.status}`);
 }
 
+async function runHomeApiFlow(): Promise<void> {
+  const config = loadConfig();
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const home = await client.fetchHome();
+
+  logger.divider("Home Summary");
+  printHomeSummary(home);
+}
+
 async function runApiPostingFlow(): Promise<void> {
   const config = loadConfig();
   const [posts, state] = await Promise.all([
@@ -306,6 +381,83 @@ async function runApiPostingFlow(): Promise<void> {
   await recordPublishedPost(config.files.postsPath, config.files.statePath, post.id);
   logger.success(`API post succeeded${result.postId ? ` with id ${result.postId}` : ""}.`);
   logger.success(`Post ${post.id} recorded as used in state.json.`);
+}
+
+async function runAutopostOnceFlow(): Promise<void> {
+  const config = loadConfig();
+  await appendAgentLog(config.files.logPath, "autopost-attempted", "Autopost run started");
+
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const status = await client.getAgentStatus();
+
+  if (status.status !== "claimed") {
+    logger.warn(`Autopost stopped because agent status is ${status.status}.`);
+    await appendAgentLog(
+      config.files.logPath,
+      "api-error",
+      `Autopost stopped because agent status is ${status.status}`
+    );
+    return;
+  }
+
+  const state = await loadState(config.files.statePath);
+  const cooldownMessage = getCooldownMessage(
+    state.lastPostedAt,
+    config.automation.minHoursBetweenPosts
+  );
+
+  if (cooldownMessage) {
+    logger.warn(cooldownMessage);
+    await appendAgentLog(config.files.logPath, "cooldown-skip", cooldownMessage);
+    return;
+  }
+
+  const posts = await loadPosts(config.files.postsPath);
+  const unusedPosts = getUnusedPosts(posts, state);
+
+  if (unusedPosts.length === 0) {
+    logger.warn("Autopost stopped because no unused posts remain.");
+    await appendAgentLog(config.files.logPath, "api-error", "Autopost stopped because no unused posts remain");
+    return;
+  }
+
+  try {
+    const home = await client.fetchHome();
+    logger.info(
+      `Autopost context: account=${home.accountName || "unknown"} karma=${home.karma ?? "unknown"}`
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Home context lookup failed. Continuing without it. ${message}`);
+  }
+
+  const chosenPost = chooseAutopostPost(unusedPosts, config.automation.randomSelection);
+  const title = deriveShortTitle(chosenPost);
+  const result = await client.createPost(title, chosenPost.text, config.api.submoltName);
+
+  if (result.verificationRequired) {
+    logger.warn("Autopost stopped because the API requested verification.");
+    console.log(result.challengeDetails ?? "[challenge details not provided]");
+    await appendAgentLog(
+      config.files.logPath,
+      "verification-required",
+      result.challengeDetails ?? "Verification challenge required during autopost"
+    );
+    return;
+  }
+
+  if (!result.success) {
+    throw new Error("Autopost failed because the API did not confirm post creation.");
+  }
+
+  await recordPublishedPost(config.files.postsPath, config.files.statePath, chosenPost.id);
+  logger.success(`Autopost published ${chosenPost.id}${result.postId ? ` as ${result.postId}` : ""}.`);
+  await appendAgentLog(
+    config.files.logPath,
+    "post-success",
+    `Autopost published ${chosenPost.id}${result.postId ? ` as ${result.postId}` : ""}`
+  );
 }
 
 async function runFeedApiFlow(): Promise<void> {
@@ -355,7 +507,6 @@ async function runDraftReplyFlow(): Promise<void> {
     const candidates = draftReplyCandidates(feedTexts);
     logger.divider("Draft Reply Candidates");
 
-    // Drafts are displayed only; this mode deliberately has no posting path.
     for (const candidate of candidates) {
       console.log(`${candidate.title}: ${candidate.text}\n`);
     }
@@ -364,6 +515,15 @@ async function runDraftReplyFlow(): Promise<void> {
   } finally {
     await client.close();
   }
+}
+
+function chooseAutopostPost(posts: Post[], randomSelection: boolean): Post {
+  if (!randomSelection) {
+    return posts[0];
+  }
+
+  const index = Math.floor(Math.random() * posts.length);
+  return posts[index];
 }
 
 function deriveShortTitle(post: Post): string {
@@ -375,6 +535,59 @@ function deriveShortTitle(post: Post): string {
   }
 
   return `${collapsed.slice(0, 69).trim()}...`;
+}
+
+function appendDeduplicatedPosts(existingPosts: Post[], importedPosts: Post[]): Post[] {
+  const existingKeys = new Set(existingPosts.map((post) => normalisePostText(post.text)));
+  const maxImportedNumber = existingPosts.reduce((max, post) => {
+    const match = post.id.match(/^imported-(\d+)$/);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  const dedupedNewPosts = importedPosts
+    .filter((post) => !existingKeys.has(normalisePostText(post.text)))
+    .map((post, index) => ({
+      ...post,
+      id: `imported-${String(maxImportedNumber + index + 1).padStart(3, "0")}`
+    }));
+
+  return [...existingPosts, ...dedupedNewPosts];
+}
+
+function normalisePostText(text: string): string {
+  return text.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function getCooldownMessage(lastPostedAt: string | null, minHoursBetweenPosts: number): string | null {
+  if (!lastPostedAt) {
+    return null;
+  }
+
+  const lastPostedMs = Date.parse(lastPostedAt);
+
+  if (Number.isNaN(lastPostedMs)) {
+    return null;
+  }
+
+  const hoursSinceLastPost = (Date.now() - lastPostedMs) / (1000 * 60 * 60);
+
+  if (hoursSinceLastPost >= minHoursBetweenPosts) {
+    return null;
+  }
+
+  return `Autopost skipped because the last post was ${hoursSinceLastPost.toFixed(2)} hours ago, below the ${minHoursBetweenPosts}-hour cooldown.`;
+}
+
+function printHomeSummary(home: HomeSummary): void {
+  console.log(`Account name: ${home.accountName || "unknown"}`);
+  console.log(`Karma: ${home.karma ?? "unknown"}`);
+  console.log(`Unread notifications: ${home.unreadNotifications ?? "unknown"}`);
+  console.log(
+    `Recent activity: ${home.recentActivity.length > 0 ? home.recentActivity.join(" | ") : "none returned"}`
+  );
+  console.log(
+    `What to do next: ${home.whatToDoNext.length > 0 ? home.whatToDoNext.join(" | ") : "none returned"}`
+  );
 }
 
 function formatFeedSummary(post: FeedPostSummary, index: number): string {
@@ -438,6 +651,11 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (config.cli.importDocx) {
+    await runImportDocxFlow();
+    return;
+  }
+
   if (config.cli.listPosts) {
     await runListPosts(config.files.postsPath, config.files.statePath);
     return;
@@ -458,8 +676,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (config.cli.homeApi) {
+    await runHomeApiFlow();
+    return;
+  }
+
   if (config.cli.postApi) {
     await runApiPostingFlow();
+    return;
+  }
+
+  if (config.cli.autopostOnce) {
+    await runAutopostOnceFlow();
     return;
   }
 
@@ -482,9 +710,17 @@ async function main(): Promise<void> {
 }
 
 main()
-  .catch((error: unknown) => {
+  .catch(async (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     logger.error(message);
+
+    try {
+      const config = loadConfig();
+      await appendAgentLog(config.files.logPath, "api-error", message);
+    } catch {
+      // Best-effort logging only.
+    }
+
     process.exitCode = 1;
   })
   .finally(() => {

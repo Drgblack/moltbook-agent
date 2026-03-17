@@ -2,14 +2,24 @@
 
 A local-first TypeScript CLI for Moltbook using the official Moltbook API as the preferred integration path, with Playwright browser automation retained as a secondary fallback.
 
+The project now supports:
+
+- API-first registration, status, home, feed, and posting
+- DOCX import into `posts.json`
+- safe one-shot autonomous posting
+- local cooldown protection
+- local file logging in `logs/agent.log`
+
 ## Preferred integration
 
-API-first is now the default recommendation for:
+API-first is the recommended path for:
 
 - agent registration
 - agent status checks
+- home dashboard reads
 - feed reads
 - supervised post creation
+- one-shot autonomous post creation
 
 Browser automation remains available for:
 
@@ -21,11 +31,12 @@ Browser automation remains available for:
 ## Core behaviour
 
 - local JSON content in `posts.json`
-- local JSON post state in `state.json`
+- local JSON publish state in `state.json`
 - local JSON credentials in `credentials.json`
+- local text logs in `logs/agent.log`
 - no database
-- no scheduler
-- no background posting
+- no cloud deployment
+- no background daemon
 - no automatic reply posting
 
 Humans can observe Moltbook publicly, but agent accounts must be registered, claimed, and verified before posting succeeds.
@@ -60,6 +71,8 @@ BROWSER_HEADLESS=false
 SLOW_MO_MS=50
 POSTS_FILE=./posts.json
 STATE_FILE=./state.json
+AUTPOST_MIN_HOURS_BETWEEN_POSTS=4
+AUTPOST_RANDOM=false
 ```
 
 Safety rule: API calls are restricted to `https://www.moltbook.com/api/v1`. The project refuses to send Moltbook API keys anywhere else.
@@ -72,30 +85,17 @@ Register an agent through the API:
 npm run agent:register
 ```
 
-This calls `POST /agents/register`, prints any returned `api_key`, `claim_url`, and `verification_code`, and saves them to `credentials.json`.
-
 Check agent claim status:
 
 ```bash
 npm run agent:status
 ```
 
-This calls `GET /agents/status` and reports whether the agent is `pending_claim` or `claimed`.
-
-Post through the API:
+Read the home/dashboard API summary:
 
 ```bash
-npm run post:api
+npm run home:api
 ```
-
-This:
-
-- selects the first unused post unless `--post-id` is provided
-- derives a short title
-- asks for confirmation before sending
-- calls `POST /posts`
-- only marks the post as used if the API confirms success
-- stops safely if the API reports a verification challenge
 
 Read recent posts through the API:
 
@@ -103,7 +103,86 @@ Read recent posts through the API:
 npm run feed:api
 ```
 
-This calls `GET /posts?sort=new&limit=10` and prints a compact readable summary.
+Create one supervised API post:
+
+```bash
+npm run post:api
+```
+
+Run one autonomous API post:
+
+```bash
+npm run autopost:once
+```
+
+## DOCX import
+
+Import candidate posts from a DOCX file:
+
+```bash
+npm run import:docx -- --docx-path "C:\path\to\file.docx"
+```
+
+The importer will:
+
+- extract raw text from the DOCX
+- split content into candidate posts using blank lines, headings, and numbered sections where sensible
+- clean whitespace
+- remove obvious duplicates
+- prompt before replacing or appending to `posts.json`
+
+Imported items are saved like:
+
+```json
+{
+  "id": "imported-001",
+  "type": "observation",
+  "text": "Post text...",
+  "source": "docx-import",
+  "used": false
+}
+```
+
+## Home API summary
+
+`npm run home:api` calls `GET /home` and prints a compact summary:
+
+- account name
+- karma
+- unread notifications
+- recent activity on your posts
+- what to do next
+
+If credentials are missing, it fails safely.
+
+## Autonomous one-shot posting
+
+`npm run autopost:once` is a local one-shot automation mode.
+
+Behaviour:
+
+- loads credentials
+- checks agent status first
+- stops if the agent is not `claimed`
+- optionally loads `/home` for context
+- selects one unused post
+- derives a short title
+- posts via the Moltbook API
+- stops if a verification challenge is required
+- marks the post as used only on confirmed success
+- writes events to `logs/agent.log`
+
+There is no terminal confirmation in `autopost:once`, but it still only posts one item per run.
+
+### Cooldown safety
+
+The local cooldown uses `state.json:lastPostedAt`.
+
+- default minimum gap: 4 hours
+- env override: `AUTPOST_MIN_HOURS_BETWEEN_POSTS`
+- random unused post selection can be enabled with `AUTPOST_RANDOM=true`
+
+If the cooldown has not expired, autopost exits cleanly and logs the skip.
 
 ## Claim and verification
 
@@ -160,42 +239,65 @@ Use browser mode when:
 ## Local files
 
 - `posts.json`: source post content
-- `state.json`: used post tracking
+- `state.json`: used post tracking and cooldown timestamp
 - `credentials.json`: saved API credentials from registration
 - `claim-link.txt`: optional browser-captured claim link
+- `logs/agent.log`: appended local agent event log
 
-## Updating posts
+## Logging
 
-Edit `posts.json` directly. Each post should look like:
+The project appends timestamped entries to `logs/agent.log` for:
 
-```json
-{
-  "id": "post-001",
-  "type": "observation",
-  "text": "Your post text here.",
-  "source": "curated",
-  "used": false
-}
+- import started
+- import completed
+- autopost attempted
+- post success
+- verification required
+- cooldown skip
+- API errors
+
+## Windows Task Scheduler
+
+You can schedule one safe autonomous post per run with Windows Task Scheduler.
+
+1. Open Task Scheduler.
+2. Create a new basic task, for example `ZazaDraftAgentAI Autopost`.
+3. Set a conservative trigger such as once per day or every 6 hours.
+4. For the action, choose `Start a program`.
+5. Program/script:
+
+```powershell
+powershell.exe
 ```
 
-`state.json` remains the primary publish ledger.
+6. Add arguments:
+
+```powershell
+-NoProfile -ExecutionPolicy Bypass -Command "cd 'C:\Users\User\moltbook-agent'; npm run autopost:once"
+```
+
+7. Save the task.
+
+The local cooldown in `state.json` still prevents overposting even if the scheduler runs more frequently than your configured minimum gap.
 
 ## Safety model
 
 - API-first integration is preferred
 - browser automation is fallback only
-- every post still requires terminal confirmation
+- supervised posting still requires terminal confirmation
+- autonomous posting is one-shot only
 - the tool never sends API keys anywhere except `https://www.moltbook.com/api/v1`
 - missing credentials fail safely
-- verification challenges are printed for a human to handle
-- no unattended posting
-- no automatic reply posting
+- verification challenges are printed or logged for a human to handle
+- local cooldown prevents overposting
+- no unattended reply posting
 
 ## Known limitations
 
 - exact Moltbook API response shapes may evolve, so the API client uses conservative field-detection heuristics
 - posting may require a verification challenge that must be completed manually
-- browser selectors may still need maintenance if the Moltbook UI changes
+- DOCX imports depend on document structure and may still need human review
+- browser selectors may need maintenance if the Moltbook UI changes
 
 ## Scripts
 
@@ -203,6 +305,9 @@ Edit `posts.json` directly. Each post should look like:
 - `npm run post`
 - `npm run post:dry`
 - `npm run post:api`
+- `npm run autopost:once`
+- `npm run home:api`
+- `npm run import:docx`
 - `npm run agent:signup`
 - `npm run agent:register`
 - `npm run agent:status`

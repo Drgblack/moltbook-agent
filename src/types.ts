@@ -22,11 +22,16 @@ export interface AppConfig {
     agentDescription: string;
     submoltName: string;
   };
+  automation: {
+    minHoursBetweenPosts: number;
+    randomSelection: boolean;
+  };
   files: {
     postsPath: string;
     statePath: string;
     claimLinkPath: string;
     credentialsPath: string;
+    logPath: string;
   };
   browser: {
     headed: boolean;
@@ -42,6 +47,10 @@ export interface AppConfig {
     listPosts: boolean;
     postApi: boolean;
     feedApi: boolean;
+    homeApi: boolean;
+    autopostOnce: boolean;
+    importDocx: boolean;
+    docxPath?: string;
     postId?: string;
   };
 }
@@ -104,4 +113,13 @@ export interface FeedPostSummary {
   submoltName: string | null;
   authorName: string | null;
   createdAt: string | null;
+}
+
+export interface HomeSummary {
+  accountName: string | null;
+  karma: number | null;
+  unreadNotifications: number | null;
+  recentActivity: string[];
+  whatToDoNext: string[];
+  raw: unknown;
 }
