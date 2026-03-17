@@ -35,9 +35,13 @@ export function loadConfig(): AppConfig {
   const homeApi = process.argv.includes("--home-api");
   const autopostOnce = process.argv.includes("--autopost-once");
   const importDocx = process.argv.includes("--import-docx");
+  const generateCandidates = process.argv.includes("--generate-candidates");
+  const importGenerated = process.argv.includes("--import-generated");
+  const reviewCandidates = process.argv.includes("--review-candidates");
   const headlessArg = process.argv.includes("--headless");
   const postId = getArgValue("--post-id");
   const docxPath = getArgValue("--docx-path");
+  const generatedPath = getArgValue("--generated-path");
 
   return {
     moltbookUrl: process.env.MOLTBOOK_URL?.trim() || "https://moltbook.com",
@@ -56,10 +60,14 @@ export function loadConfig(): AppConfig {
     },
     files: {
       postsPath: path.resolve(cwd, process.env.POSTS_FILE || "posts.json"),
+      candidatesPath: path.resolve(cwd, "candidates.json"),
       statePath: path.resolve(cwd, process.env.STATE_FILE || "state.json"),
       claimLinkPath: path.resolve(cwd, "claim-link.txt"),
       credentialsPath: path.resolve(cwd, "credentials.json"),
-      logPath: path.resolve(cwd, "logs", "agent.log")
+      logPath: path.resolve(cwd, "logs", "agent.log"),
+      promptsDir: path.resolve(cwd, "prompts"),
+      generateCandidatesPromptPath: path.resolve(cwd, "prompts", "generate-candidates-prompt.txt"),
+      feedContextPath: path.resolve(cwd, "prompts", "feed-context.json")
     },
     browser: {
       headed: !headlessArg && !isTruthy(process.env.BROWSER_HEADLESS),
@@ -78,7 +86,11 @@ export function loadConfig(): AppConfig {
       homeApi,
       autopostOnce,
       importDocx,
+      generateCandidates,
+      importGenerated,
+      reviewCandidates,
       docxPath,
+      generatedPath,
       postId
     }
   };
@@ -93,6 +105,9 @@ export function printUsage(): void {
   npm run autopost:once
   npm run home:api
   npm run import:docx -- --docx-path "C:\\path\\to\\file.docx"
+  npm run generate:candidates
+  npm run import:generated -- --generated-path "C:\\path\\to\\generated.json"
+  npm run review:candidates
   npm run agent:signup
   npm run agent:register
   npm run dev -- --agent-register-debug

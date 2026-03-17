@@ -15,6 +15,10 @@ export async function readJsonFile<T>(filePath: string): Promise<T> {
   return JSON.parse(raw) as T;
 }
 
+export async function readTextFile(filePath: string): Promise<string> {
+  return readFile(filePath, "utf8");
+}
+
 export async function writeJsonFile<T>(filePath: string, data: T): Promise<void> {
   const content = `${JSON.stringify(data, null, 2)}\n`;
   await mkdir(path.dirname(filePath), { recursive: true });

@@ -1,5 +1,18 @@
 import { loadConfig, printUsage } from "./config.js";
+import {
+  buildApprovedPostFromCandidate,
+  getPendingCandidates,
+  importGeneratedCandidates,
+  isDuplicateText,
+  loadCandidates,
+  parseGeneratedCandidates,
+  saveCandidates
+} from "./lib/candidates.js";
 import { importPostsFromDocx } from "./lib/docx-import.js";
+import {
+  buildCandidateGenerationPrompt,
+  buildFeedContextFile
+} from "./lib/generation-prompt.js";
 import { MoltbookApiClient } from "./lib/moltbook-api.js";
 import {
   draftReplyCandidates,
@@ -11,9 +24,21 @@ import {
   selectPost
 } from "./lib/posts.js";
 import { MoltbookClient } from "./lib/moltbook.js";
-import type { CredentialsFile, FeedPostSummary, HomeSummary, Post } from "./types.js";
+import type {
+  CandidatePost,
+  CredentialsFile,
+  FeedPostSummary,
+  HomeSummary,
+  Post
+} from "./types.js";
 import { appendAgentLog } from "./utils/agent-log.js";
-import { fileExists, readJsonFile, writeJsonFile, writeTextFile } from "./utils/fs.js";
+import {
+  fileExists,
+  readJsonFile,
+  readTextFile,
+  writeJsonFile,
+  writeTextFile
+} from "./utils/fs.js";
 import { HttpError } from "./utils/http.js";
 import { logger } from "./utils/logger.js";
 import { ask, askYesNo, closePrompt } from "./utils/prompt.js";
@@ -97,6 +122,228 @@ async function runImportDocxFlow(): Promise<void> {
     "import-completed",
     `DOCX import completed from ${docxPath}; saved ${finalPosts.length} posts`
   );
+}
+
+async function runGenerateCandidatesFlow(): Promise<void> {
+  const config = loadConfig();
+  const apiKey = await resolveApiKey(config.files.credentialsPath, config.api.apiKey);
+  const client = new MoltbookApiClient(config.api.base, apiKey);
+  const [posts, existingCandidates] = await Promise.all([
+    loadPosts(config.files.postsPath),
+    loadCandidates(config.files.candidatesPath)
+  ]);
+
+  const feedPosts = await client.fetchFeed(20);
+  let homeSummary: HomeSummary | null = null;
+
+  try {
+    homeSummary = await client.fetchHome();
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(`Home context lookup failed. Continuing with feed-only context. ${message}`);
+  }
+
+  const promptText = buildCandidateGenerationPrompt({
+    agentName: config.api.agentName,
+    agentDescription: config.api.agentDescription,
+    feedPosts,
+    homeSummary,
+    approvedPosts: posts
+  });
+  const feedContext = buildFeedContextFile({
+    agentName: config.api.agentName,
+    agentDescription: config.api.agentDescription,
+    feedPosts,
+    homeSummary,
+    approvedPosts: posts
+  });
+
+  if (!(await fileExists(config.files.candidatesPath))) {
+    await saveCandidates(config.files.candidatesPath, existingCandidates);
+  }
+
+  await writeTextFile(config.files.generateCandidatesPromptPath, `${promptText}\n`);
+  await writeJsonFile(config.files.feedContextPath, feedContext);
+
+  logger.divider("Candidate Generation Assets");
+  console.log(`Prompt file: ${config.files.generateCandidatesPromptPath}`);
+  console.log(`Feed context: ${config.files.feedContextPath}`);
+  console.log(`Recent feed items included: ${feedPosts.length}`);
+  console.log(`Existing candidate pool size: ${existingCandidates.length}`);
+  console.log("No candidates were auto-added. Use the prompt file with a manual LLM workflow, then import the output.");
+
+  await appendAgentLog(
+    config.files.logPath,
+    "candidate-generation-prompt-created",
+    `Created candidate generation assets from ${feedPosts.length} feed items`
+  );
+}
+
+async function runImportGeneratedFlow(): Promise<void> {
+  const config = loadConfig();
+  const generatedPath = config.cli.generatedPath;
+
+  if (!generatedPath) {
+    throw new Error(
+      'Missing --generated-path. Example: npm run import:generated -- --generated-path "C:\\path\\to\\generated.json"'
+    );
+  }
+
+  if (!(await fileExists(generatedPath))) {
+    throw new Error(`Generated candidate file not found: ${generatedPath}`);
+  }
+
+  const [rawContent, posts, existingCandidates] = await Promise.all([
+    readTextFile(generatedPath),
+    loadPosts(config.files.postsPath),
+    loadCandidates(config.files.candidatesPath)
+  ]);
+  const parsedSeeds = parseGeneratedCandidates(rawContent);
+
+  if (parsedSeeds.length === 0) {
+    logger.warn("No candidate posts could be parsed from the generated file.");
+    await appendAgentLog(
+      config.files.logPath,
+      "generated-candidates-imported",
+      `No candidates parsed from ${generatedPath}`
+    );
+    return;
+  }
+
+  const result = importGeneratedCandidates(
+    existingCandidates,
+    posts,
+    parsedSeeds,
+    "generated-from-feed"
+  );
+
+  if (result.addedCount === 0) {
+    logger.warn("No new candidates were added. Everything parsed as duplicate or too weak.");
+    await appendAgentLog(
+      config.files.logPath,
+      "dedup-skip",
+      `Skipped ${result.duplicateCount} generated candidates from ${generatedPath}`
+    );
+    return;
+  }
+
+  await saveCandidates(config.files.candidatesPath, result.candidates);
+
+  logger.divider("Generated Candidates Imported");
+  console.log(`Parsed candidates: ${parsedSeeds.length}`);
+  console.log(`Added: ${result.addedCount}`);
+  console.log(`Skipped as duplicate or too weak: ${result.duplicateCount}`);
+  console.log(`Updated pool: ${config.files.candidatesPath}`);
+
+  await appendAgentLog(
+    config.files.logPath,
+    "generated-candidates-imported",
+    `Imported ${result.addedCount} candidates from ${generatedPath}; skipped ${result.duplicateCount}`
+  );
+
+  if (result.duplicateCount > 0) {
+    await appendAgentLog(
+      config.files.logPath,
+      "dedup-skip",
+      `Skipped ${result.duplicateCount} generated candidates from ${generatedPath}`
+    );
+  }
+}
+
+async function runReviewCandidatesFlow(): Promise<void> {
+  const config = loadConfig();
+  const [posts, candidates] = await Promise.all([
+    loadPosts(config.files.postsPath),
+    loadCandidates(config.files.candidatesPath)
+  ]);
+  const pendingCandidates = getPendingCandidates(candidates);
+
+  logger.divider("Pending Candidates");
+
+  if (pendingCandidates.length === 0) {
+    logger.warn("No unapproved candidates were found in candidates.json.");
+    return;
+  }
+
+  console.log(`Pending review count: ${pendingCandidates.length}`);
+
+  let approvals = 0;
+  let rejections = 0;
+  let changed = false;
+
+  for (const candidate of candidates) {
+    if (candidate.approved || candidate.rejected === true) {
+      continue;
+    }
+
+    logger.divider(candidate.id);
+    console.log(`Type: ${candidate.type}`);
+    console.log(`Source: ${candidate.source}`);
+    console.log(`Created: ${candidate.created_at}`);
+    console.log("");
+    console.log(candidate.text);
+    console.log("");
+
+    const action = (await ask("[a]pprove [r]eject [s]kip [q]uit: ")).trim().toLowerCase();
+
+    if (action === "q") {
+      break;
+    }
+
+    if (action === "r") {
+      candidate.rejected = true;
+      rejections += 1;
+      changed = true;
+      await appendAgentLog(config.files.logPath, "review-rejection", `Rejected ${candidate.id}`);
+      continue;
+    }
+
+    if (action !== "a") {
+      continue;
+    }
+
+    if (isDuplicateText(candidate.text, posts.map((post) => post.text))) {
+      logger.warn("Candidate is too similar to an existing approved post. Marking it rejected.");
+      candidate.rejected = true;
+      rejections += 1;
+      changed = true;
+      await appendAgentLog(
+        config.files.logPath,
+        "dedup-skip",
+        `Rejected ${candidate.id} during review because it duplicated an approved post`
+      );
+      continue;
+    }
+
+    const approvedPost = buildApprovedPostFromCandidate(candidate, posts);
+    posts.push(approvedPost);
+    candidate.approved = true;
+    delete candidate.rejected;
+    approvals += 1;
+    changed = true;
+
+    await appendAgentLog(
+      config.files.logPath,
+      "review-approval",
+      `Approved ${candidate.id} into ${approvedPost.id}`
+    );
+  }
+
+  if (!changed) {
+    logger.info("Review completed with no changes.");
+    return;
+  }
+
+  await Promise.all([
+    writeJsonFile(config.files.postsPath, posts),
+    saveCandidates(config.files.candidatesPath, candidates)
+  ]);
+
+  logger.divider("Review Summary");
+  console.log(`Approved: ${approvals}`);
+  console.log(`Rejected: ${rejections}`);
+  console.log(`Updated posts: ${config.files.postsPath}`);
+  console.log(`Updated candidates: ${config.files.candidatesPath}`);
 }
 
 async function runPostingFlow(): Promise<void> {
@@ -653,6 +900,21 @@ async function main(): Promise<void> {
 
   if (config.cli.importDocx) {
     await runImportDocxFlow();
+    return;
+  }
+
+  if (config.cli.generateCandidates) {
+    await runGenerateCandidatesFlow();
+    return;
+  }
+
+  if (config.cli.importGenerated) {
+    await runImportGeneratedFlow();
+    return;
+  }
+
+  if (config.cli.reviewCandidates) {
+    await runReviewCandidatesFlow();
     return;
   }
 

@@ -8,6 +8,16 @@ export interface Post {
   used: boolean;
 }
 
+export interface CandidatePost {
+  id: string;
+  type: PostType;
+  text: string;
+  source: string;
+  created_at: string;
+  approved: boolean;
+  rejected?: boolean;
+}
+
 export interface StateFile {
   usedPostIds: string[];
   lastPostedAt: string | null;
@@ -28,10 +38,14 @@ export interface AppConfig {
   };
   files: {
     postsPath: string;
+    candidatesPath: string;
     statePath: string;
     claimLinkPath: string;
     credentialsPath: string;
     logPath: string;
+    promptsDir: string;
+    generateCandidatesPromptPath: string;
+    feedContextPath: string;
   };
   browser: {
     headed: boolean;
@@ -50,7 +64,11 @@ export interface AppConfig {
     homeApi: boolean;
     autopostOnce: boolean;
     importDocx: boolean;
+    generateCandidates: boolean;
+    importGenerated: boolean;
+    reviewCandidates: boolean;
     docxPath?: string;
+    generatedPath?: string;
     postId?: string;
   };
 }

@@ -5,10 +5,22 @@ A local-first TypeScript CLI for Moltbook using the official Moltbook API as the
 The project now supports:
 
 - API-first registration, status, home, feed, and posting
+- safe one-shot autonomous posting from `posts.json`
 - DOCX import into `posts.json`
-- safe one-shot autonomous posting
-- local cooldown protection
+- a separate candidate-generation pipeline using `candidates.json`
+- prompt/context export for manual LLM generation
 - local file logging in `logs/agent.log`
+
+## Core design rule
+
+Generation and publishing are intentionally separate.
+
+- `generate:candidates` prepares prompt/context files only
+- `import:generated` adds candidate posts into `candidates.json`
+- `review:candidates` moves approved candidates into `posts.json`
+- `autopost:once` posts approved items from `posts.json` only
+
+Newly generated candidates are never published automatically.
 
 ## Preferred integration
 
@@ -20,6 +32,7 @@ API-first is the recommended path for:
 - feed reads
 - supervised post creation
 - one-shot autonomous post creation
+- candidate-generation context gathering
 
 Browser automation remains available for:
 
@@ -28,18 +41,16 @@ Browser automation remains available for:
 - UI-only inspection
 - reply drafting from the visible feed
 
-## Core behaviour
+## Local files
 
-- local JSON content in `posts.json`
-- local JSON publish state in `state.json`
-- local JSON credentials in `credentials.json`
-- local text logs in `logs/agent.log`
-- no database
-- no cloud deployment
-- no background daemon
-- no automatic reply posting
-
-Humans can observe Moltbook publicly, but agent accounts must be registered, claimed, and verified before posting succeeds.
+- `posts.json`: approved post library used by supervised posting and autoposting
+- `candidates.json`: generated candidate pool awaiting review
+- `state.json`: used post tracking and cooldown timestamp
+- `credentials.json`: saved API credentials from registration
+- `claim-link.txt`: optional browser-captured claim link
+- `logs/agent.log`: appended local agent event log
+- `prompts/generate-candidates-prompt.txt`: prompt for manual LLM generation
+- `prompts/feed-context.json`: recent feed/home/post context for manual generation
 
 ## Setup
 
@@ -115,9 +126,110 @@ Run one autonomous API post:
 npm run autopost:once
 ```
 
+## Candidate-generation workflow
+
+This is the recommended sustainable content workflow:
+
+1. Generate a prompt/context bundle from the latest Moltbook context.
+2. Paste the prompt into an LLM manually.
+3. Save the model output locally as `.json` or `.txt`.
+4. Import the generated candidates into `candidates.json`.
+5. Review candidates in the terminal.
+6. Approved candidates move into `posts.json`.
+7. The existing autoposter continues posting only from approved `posts.json`.
+
+### Step 1: Prepare generation prompt and context
+
+```bash
+npm run generate:candidates
+```
+
+This command:
+
+- loads Moltbook credentials
+- fetches recent feed items from the Moltbook API
+- fetches `/home` context when available
+- includes a sample of approved Zaza posts from `posts.json`
+- writes `prompts/generate-candidates-prompt.txt`
+- writes `prompts/feed-context.json`
+- does not create candidates automatically
+
+The prompt template is tuned for the Zaza voice:
+
+- thoughtful
+- calm
+- analytical
+- slightly curious
+- not promotional
+- UK English
+- focused on tone safety, escalation risk, teacher-parent communication, human-AI collaboration, psychologically aware writing, and trust in AI writing systems
+
+### Step 2: Save manual LLM output locally
+
+Recommended output shape:
+
+```json
+[
+  {
+    "type": "observation",
+    "text": "Candidate post text here"
+  },
+  {
+    "type": "question",
+    "text": "Candidate question here?"
+  }
+]
+```
+
+Plain text with one post per block also works.
+
+### Step 3: Import generated candidates
+
+```bash
+npm run import:generated -- --generated-path "C:\path\to\generated.json"
+```
+
+This command:
+
+- reads a local generated file
+- parses JSON or plain text
+- normalises whitespace
+- infers `observation` vs `question` when needed
+- deduplicates against `posts.json` and `candidates.json`
+- appends only genuinely new candidates to `candidates.json`
+
+Imported candidate records look like:
+
+```json
+{
+  "id": "candidate-001",
+  "type": "observation",
+  "text": "Post text...",
+  "source": "generated-from-feed",
+  "created_at": "2026-03-17T12:00:00.000Z",
+  "approved": false
+}
+```
+
+### Step 4: Review candidates
+
+```bash
+npm run review:candidates
+```
+
+This command:
+
+- lists unapproved candidates
+- shows id, type, source, and text
+- lets you approve, reject, skip, or quit
+- appends approved candidates into `posts.json`
+- marks approved candidates as `approved: true`
+- can mark rejected candidates with `rejected: true`
+- never publishes anything
+
 ## DOCX import
 
-Import candidate posts from a DOCX file:
+Import approved post candidates from a DOCX file:
 
 ```bash
 npm run import:docx -- --docx-path "C:\path\to\file.docx"
@@ -165,7 +277,7 @@ Behaviour:
 - checks agent status first
 - stops if the agent is not `claimed`
 - optionally loads `/home` for context
-- selects one unused post
+- selects one unused approved post from `posts.json`
 - derives a short title
 - posts via the Moltbook API
 - stops if a verification challenge is required
@@ -220,29 +332,11 @@ Reply drafting from the visible feed:
 npm run reply:draft
 ```
 
-List unused local posts:
+List unused approved posts:
 
 ```bash
 npm run list-posts
 ```
-
-## Browser fallback notes
-
-Browser mode is fallback only now. The Moltbook public landing page can contain inputs or editable elements that resemble a composer, so browser posting refuses to continue unless it sees authenticated app context markers.
-
-Use browser mode when:
-
-- API registration succeeded but a human still needs to complete claim
-- captcha or verification must be handled manually
-- a UI-only inspection step is required
-
-## Local files
-
-- `posts.json`: source post content
-- `state.json`: used post tracking and cooldown timestamp
-- `credentials.json`: saved API credentials from registration
-- `claim-link.txt`: optional browser-captured claim link
-- `logs/agent.log`: appended local agent event log
 
 ## Logging
 
@@ -255,6 +349,11 @@ The project appends timestamped entries to `logs/agent.log` for:
 - verification required
 - cooldown skip
 - API errors
+- candidate generation prompt created
+- generated candidates imported
+- review approvals
+- review rejections
+- dedup skips
 
 ## Windows Task Scheduler
 
@@ -286,6 +385,8 @@ The local cooldown in `state.json` still prevents overposting even if the schedu
 - browser automation is fallback only
 - supervised posting still requires terminal confirmation
 - autonomous posting is one-shot only
+- candidate generation is local-first and manual-import based
+- newly generated candidates are never auto-published
 - the tool never sends API keys anywhere except `https://www.moltbook.com/api/v1`
 - missing credentials fail safely
 - verification challenges are printed or logged for a human to handle
@@ -297,6 +398,7 @@ The local cooldown in `state.json` still prevents overposting even if the schedu
 - exact Moltbook API response shapes may evolve, so the API client uses conservative field-detection heuristics
 - posting may require a verification challenge that must be completed manually
 - DOCX imports depend on document structure and may still need human review
+- candidate generation still depends on a manual LLM step by design
 - browser selectors may need maintenance if the Moltbook UI changes
 
 ## Scripts
@@ -307,11 +409,14 @@ The local cooldown in `state.json` still prevents overposting even if the schedu
 - `npm run post:api`
 - `npm run autopost:once`
 - `npm run home:api`
+- `npm run feed:api`
 - `npm run import:docx`
+- `npm run generate:candidates`
+- `npm run import:generated`
+- `npm run review:candidates`
 - `npm run agent:signup`
 - `npm run agent:register`
 - `npm run agent:status`
-- `npm run feed:api`
 - `npm run reply:draft`
 - `npm run list-posts`
 - `npm run typecheck`
