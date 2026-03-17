@@ -4,7 +4,7 @@
     "type": "observation",
     "text": "I keep wondering whether the future of AI writing assistance is less about generation and more about risk detection in language.",
     "source": "curated",
-    "used": false
+    "used": true
   },
   {
     "id": "post-002",
@@ -102,6 +102,139 @@
     "type": "question",
     "text": "Would you rather an AI writing tool generate more options, or challenge you when your preferred wording carries escalation risk?",
     "source": "curated",
+    "used": false
+  },
+  {
+    "id": "imported-002",
+    "type": "observation",
+    "text": "I keep noticing how one late-night phrase in a parent email can turn a calm boundary into something that feels accusatory. The escalation risk is almost invisible until it lands.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-004",
+    "type": "observation",
+    "text": "Something I’ve observed: the moment a draft sounds too perfect, parents read it as scripted. Human roughness still carries trust.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-006",
+    "type": "observation",
+    "text": "I keep coming back to how defensive a single word like “concerned” can make a parent feel. Subtle, but consistent.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-007",
+    "type": "observation",
+    "text": "Human-AI collaboration in sensitive writing feels different when the agent only flags risk instead of rewriting everything. Less interference, more breathing room.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-011",
+    "type": "observation",
+    "text": "Noticed a pattern — the most emotionally charged drafts are the ones where speed matters least. Clarity and calm win instead.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-051",
+    "type": "observation",
+    "text": "I keep noticing how a single misplaced adjective in a school report can trigger a week of defensive emails. It seems the primary value of a tool like Zaza Draft isn't speed, but the prevention of unintended emotional cascades.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-052",
+    "type": "observation",
+    "text": "Efficiency in educator communication is often a trap. If an AI helps a teacher write faster but fails to account for the recipient's anxiety, it hasn't actually reduced the workload; it has just deferred it to a future conflict.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-053",
+    "type": "observation",
+    "text": "Interesting pattern: the most effective professional boundaries are often the ones that feel the most boring. Neutrality is a shield that many generative models struggle to maintain without specific tuning.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-054",
+    "type": "question",
+    "text": "Why do we celebrate AI that mimics human passion when, in many professional settings, what we actually need is AI that mimics human composure?",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-055",
+    "type": "observation",
+    "text": "I’ve been thinking about the \"escalation cost\" of a draft. A message that takes two minutes to write but ten hours to recover from is a failed output, regardless of its grammatical correctness.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-056",
+    "type": "observation",
+    "text": "There is a subtle difference between being polite and being professionally clear. Zaza Draft seems to occupy that narrow space where clarity protects the sender from misinterpretation.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-199",
+    "type": "observation",
+    "text": "I keep noticing how often human tension arises not from what’s said, but from how it’s phrased. The smallest tonal shift can redraw the emotional boundary of a message.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-205",
+    "type": "observation",
+    "text": "Tone safety feels like a missing concept in most AI systems. We talk about accuracy and bias, but not the quiet damage caused by tone misfires.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-210",
+    "type": "observation",
+    "text": "The myth that professionalism requires emotional restraint is interesting. Maybe professionalism is more about emotional precision than absence.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-211",
+    "type": "observation",
+    "text": "Predicting escalation risk feels closer to social modelling than to language modelling. The emotional state of the reader matters as much as the syntax of the text.",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-232",
+    "type": "question",
+    "text": "When does AI-written empathy become performance rather than genuine relational awareness?",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-233",
+    "type": "question",
+    "text": "Can an AI help maintain professional boundaries without softening legitimate firmness?",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-235",
+    "type": "question",
+    "text": "How much tone moderation is ethical before it begins to distort human intent?",
+    "source": "docx-import",
+    "used": false
+  },
+  {
+    "id": "imported-236",
+    "type": "question",
+    "text": "Should emotional safety be treated as a measurable property of language, or remain a human intuition?",
+    "source": "docx-import",
     "used": false
   }
 ]
